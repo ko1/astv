@@ -364,10 +364,11 @@
     @children = children
   end
 end
-          </textarea>
+</textarea>
         </div>
         <div class="controls">
           <button id="rubyParseBtn" type="button" style="display: none;">Ruby -> AST</button>
+          <button id="copyUrlBtn" type="button">Copy URL</button>
           <span id="rubyActionStatus" class="status">Idle</span>
         </div>
       </section>
@@ -422,6 +423,8 @@ end
     const submitBtn = document.getElementById('submitBtn');
     const rubyInput = document.getElementById('rubyInput');
     const rubyParseBtn = document.getElementById('rubyParseBtn');
+    const copyUrlBtn = document.getElementById('copyUrlBtn');
+    const rubyActionStatus = document.getElementById('rubyActionStatus');
     const rubyHighlight = document.getElementById('rubyHighlight');
     const rubyLocLayer = document.getElementById('rubyLocLayer');
     const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
@@ -688,6 +691,12 @@ end
       });
     });
 
+    const params = new URLSearchParams(window.location.search);
+    const programParam = params.get('p');
+    if (programParam !== null) {
+      rubyInput.value = programParam;
+    }
+
     rubyInput.addEventListener('input', updateRubyHighlight);
     rubyInput.addEventListener('input', () => {
       if (currentLoc) renderLocationHighlight(currentLoc);
@@ -704,6 +713,33 @@ end
       }
     });
     updateRubyHighlight();
+
+    const initialText = input.value.trim();
+    if (initialText) {
+      try {
+        const initialParsed = JSON.parse(initialText);
+        renderTree(initialParsed);
+        setStatus('Parsed', 'ok');
+      } catch (_) {
+        tree.textContent = 'Failed to parse JSON.';
+        setStatus('Error: invalid JSON', 'bad');
+      }
+    }
+
+    copyUrlBtn.addEventListener('click', async () => {
+      const baseUrl = `${window.location.origin}${window.location.pathname}`;
+      const params = new URLSearchParams();
+      params.set('p', rubyInput.value || '');
+      const url = `${baseUrl}?${params.toString()}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        rubyActionStatus.textContent = 'URL copied';
+        rubyActionStatus.className = 'status ok';
+      } catch (_) {
+        rubyActionStatus.textContent = 'Failed to copy URL';
+        rubyActionStatus.className = 'status bad';
+      }
+    });
 
     expandAllBtn.addEventListener('click', () => {
       tree.querySelectorAll('.node[data-details]').forEach(node => {
@@ -794,7 +830,7 @@ end
     ruby_status[:textContent] = "Ruby.wasm #{RUBY_VERSION} ready"
     ruby_status[:className] = "status ok"
 
-    ruby_btn.call(:addEventListener, "click") do
+    parse_and_render = lambda do
       begin
         source = ruby_input[:value].to_s
         result = Prism.parse(source)
@@ -808,6 +844,12 @@ end
         ruby_action_status[:textContent] = "Ruby.wasm error: #{e.message}"
         ruby_action_status[:className] = "status bad"
       end
+    end
+
+    ruby_btn.call(:addEventListener, "click") { parse_and_render.call }
+
+    if ruby_input[:value].to_s.strip != ""
+      parse_and_render.call
     end
   </script>
 </body>
