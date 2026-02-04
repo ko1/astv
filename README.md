@@ -28,8 +28,8 @@ Visualize Prism AST as a compact tree and compare it with a traditional text rep
 - `locals` is additional info.
 
 ## Representative Value
-- A node displays: `type` as the representative value.
-- If the node has `name`, show: `type (name)`.
+- A node displays: CapitalCase version of `type` as the representative value.
+- If the node has `name`, show: `Type (name)`.
 
 ## Relations
 - Relation labels are shown outside the node box.

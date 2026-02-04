@@ -494,12 +494,21 @@ end
       };
     }
 
+    function formatTypeName(typeName) {
+      if (typeof typeName !== 'string') return String(typeName);
+      return typeName
+        .split('_')
+        .filter(Boolean)
+        .map(part => part[0].toUpperCase() + part.slice(1))
+        .join('');
+    }
+
     function representativeValue(obj) {
       if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
       if (!Object.prototype.hasOwnProperty.call(obj, 'type')) return '';
       const typeValue = obj.type;
       let shownType = '';
-      if (typeof typeValue === 'string') shownType = typeValue;
+      if (typeof typeValue === 'string') shownType = formatTypeName(typeValue);
       else if (typeValue === null) shownType = 'null';
       else shownType = String(typeValue);
 
