@@ -1,5 +1,7 @@
 # Ruby/Prism AST Tree Viewer — Spec
 
+[visit Viewer](https://ko1.github.io/astv/)
+
 ## Purpose
 Visualize Prism AST as a compact tree and compare it with a traditional text representation.
 
