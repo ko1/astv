@@ -7,17 +7,17 @@ Visualize Prism AST as a compact tree and compare it with a traditional text rep
 
 ## Inputs
 - Ruby source (parsed in the browser via Ruby.wasm + Prism)
-- JSON (AST object) pasted manually
 
 ## Initial Load Behavior
 - If URL has `?p=...`, its value is inserted into the Ruby editor.
 - Otherwise the sample Ruby code is used.
-- After the editor is populated, Ruby -> AST is executed automatically.
+- Rendering is triggered manually (Render button or shortcut).
 
 ## Core Behavior
-- Ruby input -> `Prism.parse` -> JSON -> Tree
+- Ruby input -> `Prism.parse` -> JSON -> Tree/JSON
 - Text tab shows `result.value.inspect`
 - Tree tab shows a compact node graph
+- JSON tab shows formatted JSON
 
 ## Node Rules
 - A node is an object that has a `type` key.
@@ -29,7 +29,10 @@ Visualize Prism AST as a compact tree and compare it with a traditional text rep
 
 ## Representative Value
 - A node displays: CapitalCase version of `type` as the representative value.
+- Priority order: `name` > `value` > `unescaped`.
 - If the node has `name`, show: `Type (name)`.
+- If the node has numeric `value`, show: `Type (value: N)`.
+- If the node has `unescaped`, show: `Type (unescaped: "...")`.
 
 ## Relations
 - Relation labels are shown outside the node box.
@@ -42,20 +45,21 @@ Visualize Prism AST as a compact tree and compare it with a traditional text rep
 - Expand All / Collapse All buttons control every node.
 
 ## Text vs Tree
-- Output pane is tabbed: Tree / Text.
+- Output pane is tabbed: Tree / Text / JSON.
+- Text and JSON tabs include a Copy button.
 
 ## Ruby Editor
 - Simple syntax highlight (overlay + highlight.js).
-- Ctrl+Enter triggers Ruby -> AST.
-- A node with `location` highlights the corresponding Ruby source range on hover.
+- Ctrl/Cmd+Enter triggers Render.
+- A node with `location` highlights the corresponding Ruby source range on hover (1-based columns).
 
 ## URL Share
 - `?p=...` populates the Ruby editor.
 - `Copy URL` builds a shareable URL with current editor content.
 
 ## UI Layout
-- Left: Ruby input + JSON input
-- Right: Tree/Text output
+- Left: Ruby input
+- Right: Tree/Text/JSON output
 - Footer shows Ruby.wasm load status and version
 
 ## Security Notes
