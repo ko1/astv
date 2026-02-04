@@ -401,7 +401,7 @@ end
 </textarea>
         </div>
         <div class="controls">
-          <button id="rubyParseBtn" type="button" style="display: none;">Ruby -> AST</button>
+          <button id="rubyParseBtn" type="button" style="display: none;" title="Ctrl/Cmd+Enter">Render</button>
           <button id="copyUrlBtn" type="button">Copy URL</button>
           <span id="rubyActionStatus" class="status">Idle</span>
         </div>
@@ -762,7 +762,7 @@ end
       if (currentLoc) renderLocationHighlight(currentLoc);
     });
     rubyInput.addEventListener('keydown', (event) => {
-      if (event.ctrlKey && event.key === 'Enter') {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();
         rubyParseBtn.click();
       }
