@@ -47,6 +47,7 @@
       display: grid;
       grid-template-columns: 1fr 1.1fr;
       gap: 24px;
+      align-items: stretch;
     }
 
     header {
@@ -138,6 +139,35 @@
       display: flex;
       flex-direction: column;
       gap: 24px;
+      align-self: stretch;
+    }
+
+    .column .panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+    }
+
+    .wrap > .panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .site-footer {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line);
+      margin-top: 8px;
+    }
+
+    .footer-links {
+      display: flex;
+      align-items: center;
+      gap: 16px;
     }
 
     label {
@@ -163,6 +193,7 @@
     .code-editor {
       position: relative;
       width: 100%;
+      flex: 1;
       min-height: 320px;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -329,34 +360,7 @@
     .node.expanded .details { display: block; }
 
     .footer-status {
-      position: fixed;
-      left: 16px;
-      bottom: 14px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid var(--line);
-      padding: 6px 10px;
-      border-radius: 999px;
-      box-shadow: 0 6px 18px rgba(30, 29, 27, 0.12);
       font-size: 12px;
-    }
-
-    .site-footer {
-      position: fixed;
-      right: 16px;
-      bottom: 14px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid var(--line);
-      padding: 6px 10px;
-      border-radius: 999px;
-      box-shadow: 0 6px 18px rgba(30, 29, 27, 0.12);
-      font-size: 12px;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .site-footer .footer-sep {
-      color: var(--muted);
     }
 
     @media (max-width: 900px) {
@@ -397,28 +401,13 @@ end
         </div>
       </section>
 
-      <section class="panel">
-        <label for="jsonInput">JSON Input</label>
-        <textarea id="jsonInput" spellcheck="false">{
-  "name": "ko1",
-  "age": 42,
-  "children": [
-    {"name": "foo", "age": 1},
-    {"name": "bar", "age": 2}
-  ]
-}
-</textarea>
-        <div class="controls">
-          <button id="submitBtn" type="button">Submit</button>
-          <span id="status" class="status">Idle</span>
-        </div>
-      </section>
     </div>
 
     <section class="panel">
       <div class="tabs">
         <button class="tab-btn active" data-tab="treeTab" type="button">Tree</button>
         <button class="tab-btn" data-tab="textTab" type="button">Text</button>
+        <button class="tab-btn" data-tab="jsonTab" type="button">JSON</button>
       </div>
       <div id="treeTab" class="tab-panel active">
         <div class="panel-header">
@@ -432,23 +421,26 @@ end
       <div id="textTab" class="tab-panel">
         <div id="textView" class="text-view">Text output will appear here.</div>
       </div>
+      <div id="jsonTab" class="tab-panel">
+        <div id="jsonView" class="text-view">JSON output will appear here.</div>
+      </div>
     </section>
+    <footer class="site-footer">
+      <div class="footer-status">
+        <span id="rubyStatus" class="status">Ruby.wasm loading</span>
+      </div>
+      <div class="footer-links">
+        <span>Copyright (c) 2026 Koichi Sasada</span>
+        <span><a href='https://github.com/ko1/astv'>(Repository)</a></span>
+      </div>
+    </footer>
   </div>
-  <div class="footer-status">
-    <span id="rubyStatus" class="status">Ruby.wasm loading</span>
-  </div>
-  <footer class="site-footer">
-    <span>Copyright (c) 2026 Koichi Sasada</span>
-    <span><a href='https://github.com/ko1/astv'>(Repository)</a></span>
-  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@ruby/4.0-wasm-wasi@2.8.1/dist/browser.script.iife.js"></script>
   <script>
-    const input = document.getElementById('jsonInput');
     const tree = document.getElementById('tree');
     const textView = document.getElementById('textView');
-    const status = document.getElementById('status');
-    const submitBtn = document.getElementById('submitBtn');
+    const jsonView = document.getElementById('jsonView');
     const rubyInput = document.getElementById('rubyInput');
     const rubyParseBtn = document.getElementById('rubyParseBtn');
     const copyUrlBtn = document.getElementById('copyUrlBtn');
@@ -635,14 +627,10 @@ end
 
     function renderTree(json) {
       tree.innerHTML = '';
+      jsonView.textContent = JSON.stringify(json, null, 2);
       const ul = document.createElement('ul');
       ul.appendChild(buildTree(json, 'root'));
       tree.appendChild(ul);
-    }
-
-    function setStatus(message, kind) {
-      status.textContent = message;
-      status.className = `status ${kind || ''}`.trim();
     }
 
     function getEditorMetrics() {
@@ -697,22 +685,9 @@ end
     }
 
 
-    submitBtn.addEventListener('click', () => {
-      try {
-        const parsed = JSON.parse(input.value);
-        renderTree(parsed);
-        setStatus('Parsed', 'ok');
-      } catch (err) {
-        tree.textContent = 'Failed to parse JSON.';
-        setStatus('Error: ' + err.message, 'bad');
-      }
-    });
-
     window.renderTreeFromJsonText = (jsonText) => {
       const parsed = JSON.parse(jsonText);
-      input.value = JSON.stringify(parsed, null, 2);
       renderTree(parsed);
-      setStatus('Parsed', 'ok');
     };
 
     window.renderTextResult = (text) => {
@@ -750,18 +725,6 @@ end
       }
     });
     updateRubyHighlight();
-
-    const initialText = input.value.trim();
-    if (initialText) {
-      try {
-        const initialParsed = JSON.parse(initialText);
-        renderTree(initialParsed);
-        setStatus('Parsed', 'ok');
-      } catch (_) {
-        tree.textContent = 'Failed to parse JSON.';
-        setStatus('Error: invalid JSON', 'bad');
-      }
-    }
 
     copyUrlBtn.addEventListener('click', async () => {
       const baseUrl = `${window.location.origin}${window.location.pathname}`;
