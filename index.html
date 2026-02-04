@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AST Tree Viewer</title>
+  <title>Ruby/Prism AST Tree Viewer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/languages/ruby.min.js"></script>
   <style>
     :root {
       --bg: #f4f1ea;
@@ -97,6 +100,28 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    .panel-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .action-btn {
+      border: 1px solid var(--line);
+      background: #f6f1e7;
+      color: var(--ink);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
     .text-view {
       font-family: var(--mono);
       font-size: 12px;
@@ -128,6 +153,62 @@
       background: #fbfaf7;
       color: var(--ink);
       line-height: 1.5;
+    }
+
+    .code-editor {
+      position: relative;
+      width: 100%;
+      min-height: 320px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfaf7;
+      overflow: hidden;
+    }
+
+    .code-editor .loc-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .code-editor .loc-block {
+      position: absolute;
+      background: rgba(208, 85, 47, 0.18);
+      border: 1px solid rgba(208, 85, 47, 0.35);
+      border-radius: 4px;
+    }
+
+    .code-editor textarea,
+    .code-editor pre {
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 12px;
+      margin: 0;
+      border: none;
+      outline: none;
+      width: 100%;
+      height: 100%;
+      white-space: pre;
+      overflow: auto;
+    }
+
+    .code-editor pre {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      color: var(--ink);
+      z-index: 1;
+    }
+
+    .code-editor textarea {
+      position: relative;
+      resize: vertical;
+      background: transparent;
+      color: var(--ink);
+      caret-color: var(--ink);
+      z-index: 3;
     }
 
     .controls {
@@ -263,7 +344,7 @@
   <div class="wrap">
     <header>
       <div>
-        <h1>AST Tree Viewer</h1>
+        <h1>Ruby/Prism AST Tree Viewer</h1>
         <p class="sub">Visualize structured data as a tree</p>
       </div>
       <p class="sub">Parse and render</p>
@@ -272,7 +353,10 @@
     <div class="column">
       <section class="panel">
         <label for="rubyInput">Ruby Input (Generate Prism AST)</label>
-        <textarea id="rubyInput" spellcheck="false">class User
+        <div class="code-editor">
+          <div id="rubyLocLayer" class="loc-layer"></div>
+          <pre id="rubyHighlight" class="hljs"></pre>
+          <textarea id="rubyInput" spellcheck="false">class User
   attr_reader :name, :children
 
   def initialize(name, children = [])
@@ -280,7 +364,8 @@
     @children = children
   end
 end
-</textarea>
+          </textarea>
+        </div>
         <div class="controls">
           <button id="rubyParseBtn" type="button" style="display: none;">Ruby -> AST</button>
           <span id="rubyActionStatus" class="status">Idle</span>
@@ -311,11 +396,15 @@ end
         <button class="tab-btn" data-tab="textTab" type="button">Text</button>
       </div>
       <div id="treeTab" class="tab-panel active">
-        <label>Tree</label>
+        <div class="panel-header">
+          <div class="panel-actions">
+            <button id="expandAllBtn" class="action-btn" type="button">Expand All</button>
+            <button id="collapseAllBtn" class="action-btn" type="button">Collapse All</button>
+          </div>
+        </div>
         <div id="tree" class="tree">Parsed output will appear here.</div>
       </div>
       <div id="textTab" class="tab-panel">
-        <label>Text</label>
         <div id="textView" class="text-view">Text output will appear here.</div>
       </div>
     </section>
@@ -331,8 +420,16 @@ end
     const textView = document.getElementById('textView');
     const status = document.getElementById('status');
     const submitBtn = document.getElementById('submitBtn');
+    const rubyInput = document.getElementById('rubyInput');
+    const rubyParseBtn = document.getElementById('rubyParseBtn');
+    const rubyHighlight = document.getElementById('rubyHighlight');
+    const rubyLocLayer = document.getElementById('rubyLocLayer');
     const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
     const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
+    const expandAllBtn = document.getElementById('expandAllBtn');
+    const collapseAllBtn = document.getElementById('collapseAllBtn');
+
+    let currentLoc = null;
 
     function typeOf(value) {
       if (value === null) return 'null';
@@ -348,6 +445,22 @@ end
       if (!Array.isArray(value)) return false;
       if (value.length === 0) return false;
       return value.every(item => isNodeObject(item));
+    }
+
+    function extractLocation(obj) {
+      if (!obj || typeof obj !== 'object') return null;
+      const loc = obj.location;
+      if (!loc || typeof loc !== 'object') return null;
+      const required = ['start_line', 'start_column', 'end_line', 'end_column'];
+      for (const key of required) {
+        if (!Object.prototype.hasOwnProperty.call(loc, key)) return null;
+      }
+      return {
+        startLine: Number(loc.start_line),
+        startColumn: Number(loc.start_column),
+        endLine: Number(loc.end_line),
+        endColumn: Number(loc.end_column)
+      };
     }
 
     function representativeValue(obj) {
@@ -423,6 +536,13 @@ end
       const details = t === 'object' ? hoverDetails(value) : '';
       if (details) header.title = details;
       if (details) header.dataset.details = details;
+      if (t === 'object') {
+        const loc = extractLocation(value);
+        if (loc) {
+          header.dataset.loc = `${loc.startLine},${loc.startColumn},${loc.endLine},${loc.endColumn}`;
+          li.dataset.loc = header.dataset.loc;
+        }
+      }
       if (rep && rep.value) {
         const repSpan = document.createElement('span');
         repSpan.className = 'value';
@@ -485,6 +605,57 @@ end
       status.className = `status ${kind || ''}`.trim();
     }
 
+    function getEditorMetrics() {
+      const style = window.getComputedStyle(rubyInput);
+      const font = `${style.fontSize} ${style.fontFamily}`;
+      const canvas = getEditorMetrics._canvas || (getEditorMetrics._canvas = document.createElement('canvas'));
+      const ctx = canvas.getContext('2d');
+      ctx.font = font;
+      const charWidth = ctx.measureText('M').width;
+      const lineHeight = parseFloat(style.lineHeight);
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const paddingTop = parseFloat(style.paddingTop) || 0;
+      return { charWidth, lineHeight, paddingLeft, paddingTop };
+    }
+
+    function renderLocationHighlight(loc) {
+      if (!rubyLocLayer) return;
+      rubyLocLayer.innerHTML = '';
+      if (!loc) return;
+      const { charWidth, lineHeight, paddingLeft, paddingTop } = getEditorMetrics();
+      const lines = rubyInput.value.split('\n');
+      const startLine = Math.max(1, loc.startLine);
+      const endLine = Math.max(startLine, loc.endLine);
+      for (let line = startLine; line <= endLine; line++) {
+        const text = lines[line - 1] || '';
+        const startCol = line === startLine ? Math.max(1, loc.startColumn) : 1;
+        const endColRaw = line === endLine ? Math.max(startCol, loc.endColumn) : text.length + 1;
+        const endCol = Math.max(startCol, endColRaw);
+        const left = paddingLeft + (startCol - 1) * charWidth - rubyInput.scrollLeft;
+        const width = Math.max(2, (endCol - startCol + 1) * charWidth);
+        const top = paddingTop + (line - 1) * lineHeight - rubyInput.scrollTop;
+        const block = document.createElement('div');
+        block.className = 'loc-block';
+        block.style.left = `${left}px`;
+        block.style.top = `${top}px`;
+        block.style.width = `${width}px`;
+        block.style.height = `${lineHeight}px`;
+        rubyLocLayer.appendChild(block);
+      }
+    }
+
+    function updateRubyHighlight() {
+      if (!rubyHighlight) return;
+      const code = rubyInput.value || '';
+      if (!window.hljs) {
+        rubyHighlight.textContent = code;
+        rubyInput.style.color = 'var(--ink)';
+        return;
+      }
+      rubyHighlight.innerHTML = hljs.highlight(code, { language: 'ruby' }).value;
+      rubyInput.style.color = 'transparent';
+    }
+
 
     submitBtn.addEventListener('click', () => {
       try {
@@ -511,8 +682,38 @@ end
     tabButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const target = btn.dataset.tab;
+        if (!target) return;
         tabButtons.forEach(b => b.classList.toggle('active', b === btn));
         tabPanels.forEach(panel => panel.classList.toggle('active', panel.id === target));
+      });
+    });
+
+    rubyInput.addEventListener('input', updateRubyHighlight);
+    rubyInput.addEventListener('input', () => {
+      if (currentLoc) renderLocationHighlight(currentLoc);
+    });
+    rubyInput.addEventListener('scroll', () => {
+      rubyHighlight.scrollTop = rubyInput.scrollTop;
+      rubyHighlight.scrollLeft = rubyInput.scrollLeft;
+      if (currentLoc) renderLocationHighlight(currentLoc);
+    });
+    rubyInput.addEventListener('keydown', (event) => {
+      if (event.ctrlKey && event.key === 'Enter') {
+        event.preventDefault();
+        rubyParseBtn.click();
+      }
+    });
+    updateRubyHighlight();
+
+    expandAllBtn.addEventListener('click', () => {
+      tree.querySelectorAll('.node[data-details]').forEach(node => {
+        node.classList.add('expanded');
+      });
+    });
+
+    collapseAllBtn.addEventListener('click', () => {
+      tree.querySelectorAll('.node.expanded').forEach(node => {
+        node.classList.remove('expanded');
       });
     });
 
@@ -520,7 +721,34 @@ end
       const target = event.target.closest('.node');
       if (!target || !tree.contains(target)) return;
       if (!target.dataset.details) return;
+      const selection = window.getSelection && window.getSelection().toString();
+      if (selection && selection.length > 0) return;
       target.classList.toggle('expanded');
+    });
+
+    tree.addEventListener('mouseover', (event) => {
+      const row = event.target.closest('li');
+      if (!row || !tree.contains(row)) return;
+      const locText = row.dataset.loc;
+      if (!locText) return;
+      const parts = locText.split(',').map(n => Number(n));
+      if (parts.length !== 4) return;
+      currentLoc = {
+        startLine: parts[0],
+        startColumn: parts[1],
+        endLine: parts[2],
+        endColumn: parts[3]
+      };
+      renderLocationHighlight(currentLoc);
+    });
+
+    tree.addEventListener('mouseout', (event) => {
+      const row = event.target.closest('li');
+      if (!row || !tree.contains(row)) return;
+      const related = event.relatedTarget && event.relatedTarget.closest && event.relatedTarget.closest('li');
+      if (related === row) return;
+      currentLoc = null;
+      renderLocationHighlight(null);
     });
   </script>
 
