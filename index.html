@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ruby/Prism AST Tree Viewer</title>
-  <meta property="og:title" content="Ruby/Prism AST Tree Viewer">
-  <meta property="og:description" content="Visualize Ruby Prism ASTs in the browser with a compact tree and rich details.">
+  <title>Ruby AST Tree Viewer</title>
+  <meta property="og:title" content="Ruby AST Tree Viewer">
+  <meta property="og:description" content="Visualize Ruby ASTs in the browser with a compact tree and rich details.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://ko1.github.io/astv/">
   <meta property="og:see_also" content="https://github.com/ko1/astv">
@@ -255,6 +255,16 @@
       flex-wrap: wrap;
     }
 
+    select {
+      border: 1px solid var(--line);
+      background: #f6f1e7;
+      color: var(--ink);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
     button {
       border: none;
       background: var(--accent);
@@ -378,7 +388,7 @@
   <div class="wrap">
     <header>
       <div>
-        <h1>Ruby/Prism AST Tree Viewer</h1>
+        <h1>Ruby AST Tree Viewer</h1>
         <p class="sub">Visualize structured data as a tree</p>
       </div>
       <p class="sub">Parse and render</p>
@@ -386,7 +396,7 @@
 
     <div class="column">
       <section class="panel">
-        <label for="rubyInput">Ruby Input (Generate Prism AST)</label>
+        <label for="rubyInput">Ruby Input</label>
         <div class="code-editor">
           <div id="rubyLocLayer" class="loc-layer"></div>
           <pre id="rubyHighlight" class="hljs"></pre>
@@ -401,6 +411,10 @@ end
 </textarea>
         </div>
         <div class="controls">
+          <select id="astMode" aria-label="AST mode">
+            <option value="prism" selected>Prism AST</option>
+            <option value="rubyvm">parse.y AST</option>
+          </select>
           <button id="rubyParseBtn" type="button" style="display: none;" title="Ctrl/Cmd+Enter">Render</button>
           <button id="copyUrlBtn" type="button">Copy URL</button>
           <span id="rubyActionStatus" class="status">Idle</span>
@@ -458,6 +472,7 @@ end
     const textView = document.getElementById('textView');
     const jsonView = document.getElementById('jsonView');
     const rubyInput = document.getElementById('rubyInput');
+    const astMode = document.getElementById('astMode');
     const rubyParseBtn = document.getElementById('rubyParseBtn');
     const copyUrlBtn = document.getElementById('copyUrlBtn');
     const rubyActionStatus = document.getElementById('rubyActionStatus');
@@ -541,6 +556,9 @@ end
       }
       else if (Object.prototype.hasOwnProperty.call(obj, 'unescaped')) {
         shownType = `${shownType} (unescaped: ${formatDetailValue(obj.unescaped)})`;
+      }
+      else if (Array.isArray(obj.children_values) && obj.children_values.length > 0) {
+        shownType = `${shownType} (${formatDetailValue(obj.children_values[0])})`;
       }
 
       return { key: 'type', value: shownType };
@@ -727,6 +745,103 @@ end
       }
     }
 
+    const parseyWasmUrl = 'https://cdn.jsdelivr.net/npm/@ruby/4.0-wasm-wasi@2.8.1/dist/ruby+stdlib.wasm';
+    const parseyState = { modulePromise: null };
+
+    async function loadParseyModule() {
+      if (!parseyState.modulePromise) {
+        parseyState.modulePromise = fetch(parseyWasmUrl)
+          .then(res => {
+            if (!res.ok) throw new Error(`Failed to load ruby.wasm (${res.status})`);
+            return res.arrayBuffer();
+          })
+          .then(buf => WebAssembly.compile(buf));
+      }
+      return parseyState.modulePromise;
+    }
+
+    async function importFirst(urls) {
+      let lastError = null;
+      for (const url of urls) {
+        try {
+          return await import(url);
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw lastError || new Error('Failed to import module');
+    }
+
+    async function loadWasiShim() {
+      if (window.__wasiShim) return window.__wasiShim;
+      const mod = await importFirst([
+        'https://cdn.jsdelivr.net/npm/@bjorn3/browser_wasi_shim@0.4.1/+esm',
+        'https://unpkg.com/@bjorn3/browser_wasi_shim@0.4.1/+esm',
+        'https://esm.sh/@bjorn3/browser_wasi_shim@0.4.1'
+      ]);
+      const shim = { WASI: mod.WASI, OpenFile: mod.OpenFile, PreopenDirectory: mod.PreopenDirectory, File: mod.File };
+      window.__wasiShim = shim;
+      return shim;
+    }
+
+    async function loadRubyWasmWasi() {
+      if (window.__rubyWasmWasi) return window.__rubyWasmWasi;
+      const mod = await importFirst([
+        'https://cdn.jsdelivr.net/npm/@ruby/wasm-wasi@2.8.1/dist/browser.esm.js',
+        'https://unpkg.com/@ruby/wasm-wasi@2.8.1/dist/browser.esm.js',
+        'https://esm.sh/@ruby/wasm-wasi@2.8.1'
+      ]);
+      const api = { RubyVM: mod.RubyVM };
+      window.__rubyWasmWasi = api;
+      return api;
+    }
+
+    async function runParseyDump(source) {
+      try {
+        const shim = await loadWasiShim();
+        const rubyWasmWasi = await loadRubyWasmWasi();
+        const { WASI, OpenFile, PreopenDirectory, File } = shim;
+        const { RubyVM } = rubyWasmWasi;
+        const module = await loadParseyModule();
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        const root = new Map();
+        root.set('script.rb', new File(encoder.encode(source)));
+
+        const stdin = new OpenFile(new File([]));
+        const stdoutFile = new File([]);
+        const stderrFile = new File([]);
+        const stdout = new OpenFile(stdoutFile);
+        const stderr = new OpenFile(stderrFile);
+        const wasi = new WASI(
+          ['ruby', '--parser=parse.y', '--dump=parsetree', '/script.rb'],
+          [],
+          [stdin, stdout, stderr, new PreopenDirectory('/', root)]
+        );
+        const vm = new RubyVM();
+        const imports = { wasi_snapshot_preview1: wasi.wasiImport };
+        vm.addToImports(imports);
+        const instance = await WebAssembly.instantiate(module, imports);
+        await vm.setInstance(instance);
+        wasi.initialize(instance);
+        vm.initialize(['ruby', '--parser=parse.y', '--dump=parsetree', '/script.rb']);
+        try {
+          wasi.start(instance);
+        } catch (_) {
+          // WASI exits are surfaced as exceptions; output still available.
+        }
+        const out = decoder.decode(stdoutFile.data);
+        const err = decoder.decode(stderrFile.data);
+        renderTextResult(out || err);
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        renderTextResult(`parse.y dump error: ${message}`);
+      }
+    }
+
+    window.runParseyDump = runParseyDump;
+
 
     window.renderTreeFromJsonText = (jsonText) => {
       const parsed = JSON.parse(jsonText);
@@ -868,11 +983,12 @@ end
 
     doc = JS.global[:document]
     ruby_input = doc.call(:getElementById, "rubyInput")
+    ast_mode = doc.call(:getElementById, "astMode")
     ruby_btn = doc.call(:getElementById, "rubyParseBtn")
     ruby_status = doc.call(:getElementById, "rubyStatus")
     ruby_action_status = doc.call(:getElementById, "rubyActionStatus")
 
-    if ruby_input.nil? || ruby_btn.nil? || ruby_status.nil? || ruby_action_status.nil?
+    if ruby_input.nil? || ast_mode.nil? || ruby_btn.nil? || ruby_status.nil? || ruby_action_status.nil?
       JS.global[:console].call(:error, "Ruby UI elements not found")
       return
     end
@@ -881,15 +997,75 @@ end
     ruby_status[:textContent] = "Ruby.wasm #{RUBY_VERSION} ready"
     ruby_status[:className] = "status ok"
 
+    def rubyvm_node_to_h(obj)
+      if obj.nil?
+        return nil
+      end
+
+      if obj.respond_to?(:type) && obj.respond_to?(:children)
+        children = obj.children.map { |child| rubyvm_node_to_h(child) }
+        node_children = children.compact.select { |child| child.is_a?(Hash) && child.key?(:type) }
+        extras = children.compact.reject { |child| child.is_a?(Hash) && child.key?(:type) }
+        hash = { type: obj.type.to_s }
+        if obj.respond_to?(:first_lineno) && obj.respond_to?(:first_column) &&
+           obj.respond_to?(:last_lineno) && obj.respond_to?(:last_column)
+          hash[:location] = {
+            start_line: obj.first_lineno,
+            start_column: obj.first_column,
+            end_line: obj.last_lineno,
+            end_column: obj.last_column
+          }
+        end
+        hash[:children] = node_children if node_children.any?
+        hash[:children_values] = extras if extras.any?
+        return hash
+      end
+
+      obj
+    end
+
+    def rubyvm_dump(node, indent = 0)
+      pad = "  " * indent
+      if node.respond_to?(:type) && node.respond_to?(:children)
+        loc = ""
+        if node.respond_to?(:first_lineno) && node.respond_to?(:first_column) &&
+           node.respond_to?(:last_lineno) && node.respond_to?(:last_column)
+          loc = " @#{node.first_lineno}:#{node.first_column}-#{node.last_lineno}:#{node.last_column}"
+        end
+        lines = ["#{pad}#{node.type}#{loc}"]
+        node.children.each do |child|
+          if child.respond_to?(:type) && child.respond_to?(:children)
+            lines << rubyvm_dump(child, indent + 1)
+          else
+            lines << "#{pad}  #{child.inspect}"
+          end
+        end
+        return lines.join("\n")
+      end
+      node.inspect
+    end
+
     parse_and_render = lambda do
       begin
         source = ruby_input[:value].to_s
-        result = Prism.parse(source)
-        ast = node_to_h(result.value)
-        json = JSON.generate(ast)
-        JS.global.call(:renderTreeFromJsonText, json)
-        JS.global.call(:renderTextResult, result.value.inspect)
-        ruby_action_status[:textContent] = "Ruby -> AST done"
+        mode = ast_mode[:value].to_s
+        if mode == "rubyvm"
+          if defined?(RubyVM::AbstractSyntaxTree).nil?
+            raise "RubyVM::AbstractSyntaxTree is not available"
+          end
+          ast = RubyVM::AbstractSyntaxTree.parse(source)
+          json = JSON.generate(rubyvm_node_to_h(ast))
+          JS.global.call(:renderTreeFromJsonText, json)
+          JS.global.call(:runParseyDump, source)
+          ruby_action_status[:textContent] = "parse.y AST done"
+        else
+          result = Prism.parse(source)
+          ast = node_to_h(result.value)
+          json = JSON.generate(ast)
+          JS.global.call(:renderTreeFromJsonText, json)
+          JS.global.call(:renderTextResult, result.value.inspect)
+          ruby_action_status[:textContent] = "Prism AST done"
+        end
         ruby_action_status[:className] = "status ok"
       rescue => e
         ruby_action_status[:textContent] = "Ruby.wasm error: #{e.message}"

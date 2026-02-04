@@ -1,12 +1,12 @@
-# Ruby/Prism AST Tree Viewer — Spec
+# Ruby AST Tree Viewer — Spec
 
 [visit Viewer](https://ko1.github.io/astv/)
 
 ## Purpose
-Visualize Prism AST as a compact tree and compare it with a traditional text representation.
+Visualize Ruby ASTs (Prism or parse.y) as a compact tree and compare them with a traditional text representation.
 
 ## Inputs
-- Ruby source (parsed in the browser via Ruby.wasm + Prism)
+- Ruby source (parsed in the browser via Ruby.wasm + Prism/parse.y)
 
 ## Initial Load Behavior
 - If URL has `?p=...`, its value is inserted into the Ruby editor.
@@ -14,8 +14,8 @@ Visualize Prism AST as a compact tree and compare it with a traditional text rep
 - Rendering is triggered manually (Render button or shortcut).
 
 ## Core Behavior
-- Ruby input -> `Prism.parse` -> JSON -> Tree/JSON
-- Text tab shows `result.value.inspect`
+- Ruby input -> AST (Prism or parse.y) -> JSON -> Tree/JSON
+- Text tab shows `inspect` output of the AST root (Prism) or parse.y dump (parse.y)
 - Tree tab shows a compact node graph
 - JSON tab shows formatted JSON
 
@@ -60,6 +60,7 @@ Visualize Prism AST as a compact tree and compare it with a traditional text rep
 ## UI Layout
 - Left: Ruby input
 - Right: Tree/Text/JSON output
+- AST mode selector: Prism AST / parse.y AST
 - Footer shows Ruby.wasm load status and version
 
 ## Security Notes
