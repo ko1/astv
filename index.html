@@ -359,6 +359,12 @@
 
     .node.expanded .details { display: block; }
 
+    .node.scope-node {
+      border: 1px solid var(--accent);
+      background: #f9e6dd;
+      box-shadow: 0 0 0 2px rgba(208, 85, 47, 0.2);
+    }
+
     .footer-status {
       font-size: 12px;
     }
@@ -419,9 +425,19 @@ end
         <div id="tree" class="tree">Parsed output will appear here.</div>
       </div>
       <div id="textTab" class="tab-panel">
+        <div class="panel-header">
+          <div class="panel-actions">
+            <button id="copyTextBtn" class="action-btn" type="button">Copy</button>
+          </div>
+        </div>
         <div id="textView" class="text-view">Text output will appear here.</div>
       </div>
       <div id="jsonTab" class="tab-panel">
+        <div class="panel-header">
+          <div class="panel-actions">
+            <button id="copyJsonBtn" class="action-btn" type="button">Copy</button>
+          </div>
+        </div>
         <div id="jsonView" class="text-view">JSON output will appear here.</div>
       </div>
     </section>
@@ -445,6 +461,8 @@ end
     const rubyParseBtn = document.getElementById('rubyParseBtn');
     const copyUrlBtn = document.getElementById('copyUrlBtn');
     const rubyActionStatus = document.getElementById('rubyActionStatus');
+    const copyTextBtn = document.getElementById('copyTextBtn');
+    const copyJsonBtn = document.getElementById('copyJsonBtn');
     const rubyHighlight = document.getElementById('rubyHighlight');
     const rubyLocLayer = document.getElementById('rubyLocLayer');
     const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
@@ -480,7 +498,7 @@ end
       }
       return {
         startLine: Number(loc.start_line),
-        startColumn: Number(loc.start_column),
+        startColumn: Number(loc.start_column) + 1,
         endLine: Number(loc.end_line),
         endColumn: Number(loc.end_column)
       };
@@ -495,6 +513,17 @@ end
         .join('');
     }
 
+    function hasNodeChildren(obj) {
+      return Object.keys(obj).some(key => {
+        if (key === 'value') return false;
+        const v = obj[key];
+        const t = typeOf(v);
+        if (t === 'array') return isArrayOfNodeObjects(v);
+        if (t === 'object') return isNodeObject(v);
+        return false;
+      });
+    }
+
     function representativeValue(obj) {
       if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
       if (!Object.prototype.hasOwnProperty.call(obj, 'type')) return '';
@@ -505,12 +534,13 @@ end
       else shownType = String(typeValue);
 
       if (Object.prototype.hasOwnProperty.call(obj, 'name')) {
-        const nameValue = obj.name;
-        let shownName = '';
-        if (typeof nameValue === 'string') shownName = nameValue;
-        else if (nameValue === null) shownName = 'null';
-        else shownName = String(nameValue);
-        return { key: 'type', value: `${shownType} (${shownName})` };
+        shownType = `${shownType} (${obj.name})`;
+      }
+      else if (Object.prototype.hasOwnProperty.call(obj, 'value')) {
+        shownType = `${shownType} (value: ${obj.value})`;
+      }
+      else if (Object.prototype.hasOwnProperty.call(obj, 'unescaped')) {
+        shownType = `${shownType} (unescaped: ${formatDetailValue(obj.unescaped)})`;
       }
 
       return { key: 'type', value: shownType };
@@ -529,7 +559,9 @@ end
           Object.prototype.hasOwnProperty.call(value, 'end_line') &&
           Object.prototype.hasOwnProperty.call(value, 'end_column')
         ) {
-          return `${value.start_line}:${value.start_column}-${value.end_line}:${value.end_column}`;
+          const startCol = Number(value.start_column) + 1;
+          const endCol = Number(value.end_column);
+          return `${value.start_line}:${startCol}-${value.end_line}:${endCol}`;
         }
         try {
           return JSON.stringify(value);
@@ -568,6 +600,9 @@ end
       const details = t === 'object' ? hoverDetails(value) : '';
       if (details) header.title = details;
       if (details) header.dataset.details = details;
+      if (t === 'object' && value && Array.isArray(value.locals)) {
+        header.classList.add('scope-node');
+      }
       if (t === 'object') {
         const loc = extractLocation(value);
         if (loc) {
@@ -684,6 +719,14 @@ end
       rubyInput.style.color = 'transparent';
     }
 
+    async function copyOutput(text) {
+      try {
+        await navigator.clipboard.writeText(text || '');
+      } catch (_) {
+        window.alert('Failed to copy to clipboard.');
+      }
+    }
+
 
     window.renderTreeFromJsonText = (jsonText) => {
       const parsed = JSON.parse(jsonText);
@@ -739,6 +782,14 @@ end
         rubyActionStatus.textContent = 'Failed to copy URL';
         rubyActionStatus.className = 'status bad';
       }
+    });
+
+    copyTextBtn.addEventListener('click', () => {
+      copyOutput(textView.textContent || '');
+    });
+
+    copyJsonBtn.addEventListener('click', () => {
+      copyOutput(jsonView.textContent || '');
     });
 
     expandAllBtn.addEventListener('click', () => {
