@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AST Tree Viewer</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #ffffff;
+      --ink: #1e1d1b;
+      --accent: #d0552f;
+      --muted: #6f6a62;
+      --line: #d9d1c6;
+      --ok: #1f7a4f;
+      --bad: #a6362a;
+      --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      --display: "Cormorant Garamond", "Georgia", serif;
+      --sans: "Work Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: var(--sans);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 10%, rgba(208,85,47,0.08), transparent 40%),
+        radial-gradient(circle at 90% 20%, rgba(31,122,79,0.08), transparent 45%),
+        linear-gradient(180deg, #f8f5ef 0%, #efe9df 100%);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 100%;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 24px;
+    }
+
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 2px solid var(--line);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      font-family: var(--display);
+      font-size: 32px;
+      margin: 0;
+      letter-spacing: 0.5px;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 14px;
+      margin: 0;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 12px 32px rgba(30, 29, 27, 0.08);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .tab-btn {
+      border: 1px solid var(--line);
+      background: #f6f1e7;
+      color: var(--ink);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .text-view {
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 320px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 13px;
+      background: #fbfaf7;
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      padding: 10px 18px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(208,85,47,0.25);
+    }
+
+    .status {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .status.ok { color: var(--ok); }
+    .status.bad { color: var(--bad); }
+
+    .tree {
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .tree ul {
+      list-style: none;
+      padding-left: 18px;
+      margin: 6px 0;
+    }
+
+    .tree li {
+      margin: 6px 0;
+      position: relative;
+      padding-left: 12px;
+    }
+
+    .tree li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 12px;
+      width: 10px;
+      border-top: 1px dashed var(--line);
+    }
+
+    .tree li::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: -10px;
+      height: calc(100% + 10px);
+      border-left: 1px dashed var(--line);
+    }
+
+    .tree li:last-child::after {
+      height: 22px;
+    }
+
+    .tree > ul > li::after {
+      top: 12px;
+      height: 0;
+      border-left: none;
+    }
+
+    .node {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #f3eee4;
+      padding: 2px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 120ms ease, box-shadow 120ms ease;
+    }
+
+    .node .type { color: var(--muted); font-size: 11px; }
+    .node .value { color: #1f2a44; }
+    .node .details { display: none; color: #2b2b2b; font-size: 12px; white-space: pre-line; }
+
+    .rel {
+      display: inline-block;
+      margin-right: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.2px;
+    }
+
+    .node.expanded {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 10px;
+      background: #efe7d8;
+      box-shadow: 0 8px 18px rgba(30, 29, 27, 0.12);
+    }
+
+    .node.expanded .details { display: block; }
+
+    .footer-status {
+      position: fixed;
+      left: 16px;
+      bottom: 14px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      padding: 6px 10px;
+      border-radius: 999px;
+      box-shadow: 0 6px 18px rgba(30, 29, 27, 0.12);
+      font-size: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .wrap { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>AST Tree Viewer</h1>
+        <p class="sub">Visualize structured data as a tree</p>
+      </div>
+      <p class="sub">Parse and render</p>
+    </header>
+
+    <div class="column">
+      <section class="panel">
+        <label for="rubyInput">Ruby Input (Generate Prism AST)</label>
+        <textarea id="rubyInput" spellcheck="false">class User
+  attr_reader :name, :children
+
+  def initialize(name, children = [])
+    @name = name
+    @children = children
+  end
+end
+</textarea>
+        <div class="controls">
+          <button id="rubyParseBtn" type="button" style="display: none;">Ruby -> AST</button>
+          <span id="rubyActionStatus" class="status">Idle</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <label for="jsonInput">JSON Input</label>
+        <textarea id="jsonInput" spellcheck="false">{
+  "name": "ko1",
+  "age": 42,
+  "children": [
+    {"name": "foo", "age": 1},
+    {"name": "bar", "age": 2}
+  ]
+}
+</textarea>
+        <div class="controls">
+          <button id="submitBtn" type="button">Submit</button>
+          <span id="status" class="status">Idle</span>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="treeTab" type="button">Tree</button>
+        <button class="tab-btn" data-tab="textTab" type="button">Text</button>
+      </div>
+      <div id="treeTab" class="tab-panel active">
+        <label>Tree</label>
+        <div id="tree" class="tree">Parsed output will appear here.</div>
+      </div>
+      <div id="textTab" class="tab-panel">
+        <label>Text</label>
+        <div id="textView" class="text-view">Text output will appear here.</div>
+      </div>
+    </section>
+  </div>
+  <div class="footer-status">
+    <span id="rubyStatus" class="status">Ruby.wasm loading</span>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@ruby/4.0-wasm-wasi@2.8.1/dist/browser.script.iife.js"></script>
+  <script>
+    const input = document.getElementById('jsonInput');
+    const tree = document.getElementById('tree');
+    const textView = document.getElementById('textView');
+    const status = document.getElementById('status');
+    const submitBtn = document.getElementById('submitBtn');
+    const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+    const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
+
+    function typeOf(value) {
+      if (value === null) return 'null';
+      if (Array.isArray(value)) return 'array';
+      return typeof value;
+    }
+
+    function isNodeObject(value) {
+      return !!value && typeof value === 'object' && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'type');
+    }
+
+    function isArrayOfNodeObjects(value) {
+      if (!Array.isArray(value)) return false;
+      if (value.length === 0) return false;
+      return value.every(item => isNodeObject(item));
+    }
+
+    function representativeValue(obj) {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
+      if (!Object.prototype.hasOwnProperty.call(obj, 'type')) return '';
+      const typeValue = obj.type;
+      let shownType = '';
+      if (typeof typeValue === 'string') shownType = typeValue;
+      else if (typeValue === null) shownType = 'null';
+      else shownType = String(typeValue);
+
+      if (Object.prototype.hasOwnProperty.call(obj, 'name')) {
+        const nameValue = obj.name;
+        let shownName = '';
+        if (typeof nameValue === 'string') shownName = nameValue;
+        else if (nameValue === null) shownName = 'null';
+        else shownName = String(nameValue);
+        return { key: 'type', value: `${shownType} (${shownName})` };
+      }
+
+      return { key: 'type', value: shownType };
+    }
+
+    function formatDetailValue(value) {
+      const t = typeOf(value);
+      if (t === 'string') return `"${value}"`;
+      if (t === 'number' || t === 'boolean') return String(value);
+      if (t === 'null') return 'null';
+      if (t === 'array') return JSON.stringify(value);
+      if (t === 'object') {
+        if (
+          Object.prototype.hasOwnProperty.call(value, 'start_line') &&
+          Object.prototype.hasOwnProperty.call(value, 'start_column') &&
+          Object.prototype.hasOwnProperty.call(value, 'end_line') &&
+          Object.prototype.hasOwnProperty.call(value, 'end_column')
+        ) {
+          return `${value.start_line}:${value.start_column}-${value.end_line}:${value.end_column}`;
+        }
+        try {
+          return JSON.stringify(value);
+        } catch (_) {
+          return '[Object]';
+        }
+      }
+      return String(value);
+    }
+
+    function hoverDetails(obj) {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
+      const keys = Object.keys(obj);
+      const firstKey = keys[0];
+      const lines = [];
+      keys.forEach(key => {
+        const v = obj[key];
+        const t = typeOf(v);
+        if (t === 'array') {
+          if (isArrayOfNodeObjects(v)) return;
+          lines.push(`${key}: ${formatDetailValue(v)}`);
+          return;
+        }
+        if (t === 'object' && isNodeObject(v)) return;
+        lines.push(`${key}: ${formatDetailValue(v)}`);
+      });
+      return lines.join('\n');
+    }
+
+    function buildTree(value, label = 'root') {
+      const t = typeOf(value);
+      const li = document.createElement('li');
+      const header = document.createElement('span');
+      header.className = 'node';
+      const rep = t === 'object' ? representativeValue(value) : '';
+      const details = t === 'object' ? hoverDetails(value) : '';
+      if (details) header.title = details;
+      if (details) header.dataset.details = details;
+      if (rep && rep.value) {
+        const repSpan = document.createElement('span');
+        repSpan.className = 'value';
+        repSpan.textContent = rep.value;
+        header.appendChild(repSpan);
+      }
+      if (details) {
+        const detailSpan = document.createElement('span');
+        detailSpan.className = 'details';
+        detailSpan.textContent = details;
+        header.appendChild(detailSpan);
+      }
+      li.appendChild(header);
+      const relation = document.createElement('span');
+      relation.className = 'rel';
+      if (t === 'array') {
+        relation.textContent = `${label} (size: ${value.length})`;
+      } else {
+        relation.textContent = label;
+      }
+      li.insertBefore(relation, header);
+
+      if (t === 'object') {
+        const keys = Object.keys(value);
+        if (keys.length) {
+          const ul = document.createElement('ul');
+          keys.forEach(key => {
+            const child = value[key];
+            const childType = typeOf(child);
+            if (childType === 'array' && isArrayOfNodeObjects(child)) {
+              ul.appendChild(buildTree(child, key));
+              return;
+            }
+            if (childType === 'object' && isNodeObject(child)) {
+              ul.appendChild(buildTree(child, key));
+            }
+          });
+          li.appendChild(ul);
+        }
+      } else if (t === 'array') {
+        if (value.length) {
+          const ul = document.createElement('ul');
+          value.forEach((item, index) => ul.appendChild(buildTree(item, `[${index}]`)));
+          li.appendChild(ul);
+        }
+      }
+
+      return li;
+    }
+
+    function renderTree(json) {
+      tree.innerHTML = '';
+      const ul = document.createElement('ul');
+      ul.appendChild(buildTree(json, 'root'));
+      tree.appendChild(ul);
+    }
+
+    function setStatus(message, kind) {
+      status.textContent = message;
+      status.className = `status ${kind || ''}`.trim();
+    }
+
+
+    submitBtn.addEventListener('click', () => {
+      try {
+        const parsed = JSON.parse(input.value);
+        renderTree(parsed);
+        setStatus('Parsed', 'ok');
+      } catch (err) {
+        tree.textContent = 'Failed to parse JSON.';
+        setStatus('Error: ' + err.message, 'bad');
+      }
+    });
+
+    window.renderTreeFromJsonText = (jsonText) => {
+      const parsed = JSON.parse(jsonText);
+      input.value = JSON.stringify(parsed, null, 2);
+      renderTree(parsed);
+      setStatus('Parsed', 'ok');
+    };
+
+    window.renderTextResult = (text) => {
+      textView.textContent = text || '';
+    };
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.tab;
+        tabButtons.forEach(b => b.classList.toggle('active', b === btn));
+        tabPanels.forEach(panel => panel.classList.toggle('active', panel.id === target));
+      });
+    });
+
+    tree.addEventListener('click', (event) => {
+      const target = event.target.closest('.node');
+      if (!target || !tree.contains(target)) return;
+      if (!target.dataset.details) return;
+      target.classList.toggle('expanded');
+    });
+  </script>
+
+  <script type="text/ruby">
+    require "js"
+    require "json"
+    require "prism"
+
+    def node_to_h(obj)
+      case obj
+      when Prism::Node
+        hash = { type: obj.type.to_s }
+        obj.deconstruct_keys(nil).each do |key, value|
+          hash[key] = node_to_h(value)
+        end
+        hash
+      when Array
+        obj.map { |v| node_to_h(v) }
+      when Prism::Location
+        {
+          start_line: obj.start_line,
+          start_column: obj.start_column,
+          end_line: obj.end_line,
+          end_column: obj.end_column
+        }
+      else
+        obj
+      end
+    end
+
+    doc = JS.global[:document]
+    ruby_input = doc.call(:getElementById, "rubyInput")
+    ruby_btn = doc.call(:getElementById, "rubyParseBtn")
+    ruby_status = doc.call(:getElementById, "rubyStatus")
+    ruby_action_status = doc.call(:getElementById, "rubyActionStatus")
+
+    if ruby_input.nil? || ruby_btn.nil? || ruby_status.nil? || ruby_action_status.nil?
+      JS.global[:console].call(:error, "Ruby UI elements not found")
+      return
+    end
+
+    ruby_btn[:style] = "display: inline-block;"
+    ruby_status[:textContent] = "Ruby.wasm #{RUBY_VERSION} ready"
+    ruby_status[:className] = "status ok"
+
+    ruby_btn.call(:addEventListener, "click") do
+      begin
+        source = ruby_input[:value].to_s
+        result = Prism.parse(source)
+        ast = node_to_h(result.value)
+        json = JSON.generate(ast)
+        JS.global.call(:renderTreeFromJsonText, json)
+        JS.global.call(:renderTextResult, result.value.inspect)
+        ruby_action_status[:textContent] = "Ruby -> AST done"
+        ruby_action_status[:className] = "status ok"
+      rescue => e
+        ruby_action_status[:textContent] = "Ruby.wasm error: #{e.message}"
+        ruby_action_status[:className] = "status bad"
+      end
+    end
+  </script>
+</body>
+</html>
