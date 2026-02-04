@@ -907,6 +907,10 @@ end
       copyOutput(jsonView.textContent || '');
     });
 
+    astMode.addEventListener('change', () => {
+      rubyParseBtn.click();
+    });
+
     expandAllBtn.addEventListener('click', () => {
       tree.querySelectorAll('.node[data-details]').forEach(node => {
         node.classList.add('expanded');
